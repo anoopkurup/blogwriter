@@ -1,0 +1,67 @@
+{
+  "company": "<company name>",
+  "website": "<company website or landing page>",
+  "oneLineDescription": "<one-line business summary>",
+  "brandBackground": {
+    "mission": "<mission / positioning>",
+    "productsServices": ["<service 1>", "<service 2>"],
+    "uniqueDifferentiators": ["<differentiator 1>", "<differentiator 2>"]
+  },
+  "purposeGoals": [
+    "<primary content goal 1>",
+    "<goal 2>"
+  ],
+  "audiencePersonas": [
+    {
+      "persona": "<persona name>",
+      "role": "<role/title>",
+      "painPoints": ["<pain1>", "<pain2>"],
+      "contentNeeds": ["<need1>", "<need2>"]
+    }
+  ],
+  "toneStyle": {
+    "voice": "<voice keywords (e.g., authoritative, friendly)>",
+    "tone": "<formality>",
+    "perspective": "<we/you/mix>",
+    "brandKeywords": ["<kw1>", "<kw2>"]
+  },
+  "blogStructure": {
+    "headlineGuidelines": "<rules>",
+    "introGuidelines": "<rules>",
+    "defaultOutline": ["<H2 1>", "<H2 2>", "<H2 3>"],
+    "visualGuidelines": "<image/chart rules>"
+  },
+  "seoGuidelines": {
+    "primaryKeywordExamples": ["<k1>", "<k2>"],
+    "keywordPlacementRules": ["<where>"],
+    "metaLengths": {"titleMax": 60, "descriptionMax": 160},
+    "internalLinkTargets": ["<url1>", "<url2>"],
+    "externalSourcesPreferred": ["<domain1>", "<domain2>"]
+  },
+  "contentRequirements": [
+    "<requirement 1>",
+    "<requirement 2>"
+  ],
+  "visualsMedia": {
+    "featuredImageRequired": true,
+    "inPostImages": 2,
+    "allowedSources": ["CompanyAssets", "Stock", "CustomCharts"],
+    "altTextRule": "<rule>"
+  },
+  "cta": {
+    "primaryTypes": ["<CTA type 1>", "<CTA type 2>"],
+    "placement": ["End", "Mid optional"],
+    "tone": "<CTA tone>",
+    "exampleCopy": ["<example CTA copy>"]
+  },
+  "formattingSubmission": {
+    "outputFormats": ["markdown", "google-docs"],
+    "fileNamingPattern": "<YYYY-MM-DD-topic-keyword>",
+    "workflow": ["Draft", "Legal/Compliance review", "SEO review", "Publish"]
+  },
+  "qualityChecklist": [
+    {"item": "Title contains keyword", "passed": null, "notes": ""},
+    {"item": "Meta description present", "passed": null, "notes": ""}
+  ],
+  "sampleTopics": ["<topic 1>", "<topic 2>"]
+}
