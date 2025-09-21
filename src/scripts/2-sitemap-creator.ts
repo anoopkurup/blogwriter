@@ -13,38 +13,43 @@ export class SitemapCreatorScript {
   }
 
   async execute(config: ScriptConfig): Promise<void> {
-    logger.script(2, 'Sitemap Creator');
+    logger.script(1, 'Comprehensive Sitemap Creator'); // Updated to Script 1
 
     try {
-      // Check if we have company data to get the website URL
-      let websiteUrl = config.websiteUrl;
-
-      if (!websiteUrl) {
-        // Try to load from existing company data
-        try {
-          const companyDataPath = `${config.companyPath}/company-data.yaml`;
-          // For now, we'll require the website URL to be provided
-          throw new Error('Website URL is required for sitemap creation');
-        } catch {
-          throw new Error('Website URL is required for sitemap creation. Please provide it or run Script 1 first.');
-        }
+      if (!config.websiteUrl) {
+        throw new Error('Website URL is required for comprehensive sitemap creation');
       }
 
-      logger.startSpinner('Creating comprehensive sitemap...');
+      logger.startSpinner('Creating comprehensive website sitemap...');
 
-      // Create sitemap by crawling the website
-      logger.updateSpinner('Discovering website pages...');
-      const urls = await this.scraper.createSitemap(websiteUrl);
+      // Phase 1: Standard website crawling
+      logger.updateSpinner('Phase 1: Discovering website pages via crawling...');
+      const crawledUrls = await this.scraper.createSitemap(config.websiteUrl);
 
-      // Sort URLs by type and importance
-      const sortedUrls = this.sortUrlsByImportance(urls);
+      // Phase 2: Smart page discovery using common patterns
+      logger.updateSpinner('Phase 2: Discovering pages via common URL patterns...');
+      const discoveredUrls = await this.discoverAdditionalPages(config.websiteUrl);
 
-      // Save sitemap
-      logger.updateSpinner('Saving sitemap...');
+      // Phase 3: Sitemap.xml discovery
+      logger.updateSpinner('Phase 3: Checking for sitemap.xml...');
+      const sitemapUrls = await this.discoverFromSitemap(config.websiteUrl);
+
+      // Combine and deduplicate all URLs
+      const allUrls = [...new Set([...crawledUrls, ...discoveredUrls, ...sitemapUrls])];
+
+      // Phase 4: Validate and categorize URLs
+      logger.updateSpinner('Phase 4: Validating and categorizing discovered pages...');
+      const validatedUrls = await this.validateAndCategorizeUrls(allUrls, config.websiteUrl);
+
+      // Sort URLs by type and importance for better processing order
+      const sortedUrls = this.sortUrlsByImportance(validatedUrls);
+
+      // Save comprehensive sitemap
+      logger.updateSpinner('Saving comprehensive sitemap...');
       await this.fileManager.saveSitemap(config.companyPath, sortedUrls);
 
       logger.stopSpinner();
-      logger.success('Sitemap created successfully!');
+      logger.success('Comprehensive sitemap created successfully!');
 
       // Display summary
       console.log('');
@@ -126,5 +131,121 @@ export class SitemapCreatorScript {
         return urlLower.includes(`/${pattern}`);
       });
     }).length;
+  }
+
+  private async discoverAdditionalPages(websiteUrl: string): Promise<string[]> {
+    const baseUrl = new URL(websiteUrl).origin;
+    const commonPaths = [
+      // Core business pages
+      '/about', '/about-us', '/about-company', '/who-we-are', '/our-story',
+      '/services', '/what-we-do', '/solutions', '/offerings', '/consulting',
+      '/products', '/portfolio', '/work', '/case-studies', '/clients',
+      '/contact', '/contact-us', '/get-in-touch', '/reach-us',
+
+      // Team and company info
+      '/team', '/our-team', '/leadership', '/management', '/founders',
+      '/careers', '/jobs', '/join-us', '/work-with-us',
+      '/news', '/press', '/media', '/announcements',
+
+      // Resources and content
+      '/blog', '/insights', '/articles', '/resources', '/knowledge',
+      '/whitepapers', '/guides', '/downloads', '/library',
+      '/faq', '/faqs', '/help', '/support', '/documentation',
+
+      // Business specific
+      '/industries', '/sectors', '/expertise', '/specialties',
+      '/approach', '/methodology', '/process', '/how-we-work',
+      '/why-us', '/why-choose-us', '/advantages', '/benefits',
+      '/testimonials', '/reviews', '/success-stories', '/results',
+
+      // Legal and policy
+      '/privacy', '/privacy-policy', '/terms', '/terms-of-service',
+      '/legal', '/disclaimer', '/cookies', '/gdpr'
+    ];
+
+    const discoveredUrls: string[] = [];
+
+    for (const path of commonPaths) {
+      try {
+        const testUrl = `${baseUrl}${path}`;
+        const pageContent = await this.scraper.scrapePageContent(testUrl);
+
+        if (pageContent && pageContent.content.length > 0) {
+          discoveredUrls.push(testUrl);
+        }
+      } catch (error) {
+        // Page doesn't exist or isn't accessible, continue
+        continue;
+      }
+    }
+
+    return discoveredUrls;
+  }
+
+  private async discoverFromSitemap(websiteUrl: string): Promise<string[]> {
+    try {
+      const baseUrl = new URL(websiteUrl).origin;
+      const sitemapUrls = [`${baseUrl}/sitemap.xml`, `${baseUrl}/sitemap_index.xml`];
+
+      for (const sitemapUrl of sitemapUrls) {
+        try {
+          const pageContent = await this.scraper.scrapePageContent(sitemapUrl);
+          if (pageContent && pageContent.content.length > 0) {
+            // Basic XML parsing for URLs - look for <loc> tags
+            const xmlContent = pageContent.content.join('\n');
+            const urlMatches = xmlContent.match(/<loc>(.*?)<\/loc>/g);
+
+            if (urlMatches) {
+              return urlMatches.map(match => match.replace(/<\/?loc>/g, '').trim());
+            }
+          }
+        } catch (error) {
+          continue;
+        }
+      }
+
+      return [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  private async validateAndCategorizeUrls(urls: string[], baseWebsiteUrl: string): Promise<string[]> {
+    const baseUrl = new URL(baseWebsiteUrl).origin;
+    const validUrls: string[] = [];
+
+    for (const url of urls) {
+      try {
+        // Only include URLs from the same domain
+        if (url.startsWith(baseUrl)) {
+          // Basic validation - try to access the page
+          const pageContent = await this.scraper.scrapePageContent(url);
+
+          if (pageContent && pageContent.content.length > 0) {
+            // Filter out common non-content pages
+            const urlLower = url.toLowerCase();
+            const skipPatterns = [
+              '/wp-admin', '/admin', '/login', '/logout', '/register',
+              '/cart', '/checkout', '/account', '/dashboard',
+              '/search', '/tag/', '/category/', '/author/',
+              '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+              '.jpg', '.jpeg', '.png', '.gif', '.svg', '.ico',
+              '.css', '.js', '.xml', '.json', '.zip', '.rar'
+            ];
+
+            const shouldSkip = skipPatterns.some(pattern => urlLower.includes(pattern));
+
+            if (!shouldSkip) {
+              validUrls.push(url);
+            }
+          }
+        }
+      } catch (error) {
+        // Page not accessible, skip it
+        continue;
+      }
+    }
+
+    return [...new Set(validUrls)]; // Remove duplicates
   }
 }

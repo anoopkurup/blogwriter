@@ -153,88 +153,160 @@ export class DataforSEOClient {
   private generateSeedKeywords(companyData: CompanyData): string[] {
     const seeds: string[] = [];
 
-    // Add professional investment/finance seed keywords
-    const investmentSeeds = [
-      'portfolio management services',
-      'investment strategies',
-      'wealth management',
-      'asset allocation',
-      'financial planning',
-      'investment advisory',
-      'portfolio diversification',
-      'risk management',
-      'market analysis',
-      'investment returns',
-      'fund management',
-      'equity investment',
-      'mutual funds',
-      'systematic investment',
-      'retirement planning',
-      'tax planning',
-      'investment performance',
-      'professional investment management'
-    ];
-
-    // Add core investment seeds
-    seeds.push(...investmentSeeds);
-
-    // Add industry-specific terms based on company data
+    // Detect industry and generate relevant seeds
     const industry = this.detectIndustry(companyData);
+
+    // Start with industry-specific terms based on company data
     seeds.push(...this.getIndustrySeeds(industry));
 
-    // Add informational keywords for educational content
-    const educationalSeeds = [
-      'investment guide',
-      'portfolio management explained',
-      'investment strategies comparison',
-      'wealth building strategies',
-      'investment planning process',
-      'professional investment advice',
-      'portfolio optimization',
-      'investment decision making'
-    ];
+    // Add company-specific services and value propositions
+    companyData.businessPositioning.valueProposition.forEach(service => {
+      seeds.push(service.toLowerCase());
+      seeds.push(`${service.toLowerCase()} services`);
+      seeds.push(`professional ${service.toLowerCase()}`);
+    });
 
-    seeds.push(...educationalSeeds);
+    // Add core business terms from company positioning
+    if (companyData.businessPositioning.tagline) {
+      const taglineWords = this.extractMeaningfulWords(companyData.businessPositioning.tagline);
+      seeds.push(...taglineWords);
+    }
 
-    return [...new Set(seeds)].slice(0, 15); // Deduplicate and limit to more professional seeds
+    if (companyData.businessPositioning.promise) {
+      const promiseWords = this.extractMeaningfulWords(companyData.businessPositioning.promise);
+      seeds.push(...promiseWords);
+    }
+
+    // Add target audience related keywords
+    if (companyData.targetAudience.segments.length > 0) {
+      companyData.targetAudience.segments.forEach(segment => {
+        seeds.push(`${segment.toLowerCase()} solutions`);
+        seeds.push(`${segment.toLowerCase()} services`);
+      });
+    }
+
+    // Add educational/informational modifiers for content marketing
+    const educationalModifiers = ['how to', 'guide to', 'best practices for', 'tips for'];
+    const coreBusinessTerms = this.extractCoreBusinessTerms(companyData, industry);
+
+    coreBusinessTerms.forEach(term => {
+      educationalModifiers.forEach(modifier => {
+        seeds.push(`${modifier} ${term}`);
+      });
+    });
+
+    return [...new Set(seeds)].slice(0, 20); // Deduplicate and limit to reasonable number
   }
 
   private detectIndustry(companyData: CompanyData): string {
-    const text = `${companyData.name} ${companyData.businessPositioning.tagline} ${companyData.businessPositioning.promise}`.toLowerCase();
+    const text = `${companyData.name} ${companyData.businessPositioning.tagline} ${companyData.businessPositioning.promise} ${companyData.businessPositioning.valueProposition.join(' ')}`.toLowerCase();
 
-    if (text.includes('portfolio') || text.includes('investment') || text.includes('pms')) return 'portfolio management';
-    if (text.includes('consulting')) return 'consulting';
-    if (text.includes('marketing')) return 'marketing';
-    if (text.includes('technology') || text.includes('tech')) return 'technology';
-    if (text.includes('healthcare') || text.includes('medical')) return 'healthcare';
-    if (text.includes('finance') || text.includes('financial')) return 'financial services';
+    // More specific industry detection with better categorization
+    if (text.includes('portfolio') || text.includes('investment') || text.includes('pms') || text.includes('wealth management')) return 'financial services';
+    if (text.includes('marketing consulting') || (text.includes('marketing') && text.includes('consulting'))) return 'marketing consulting';
+    if (text.includes('digital marketing') || text.includes('seo') || text.includes('social media marketing')) return 'digital marketing';
+    if (text.includes('management consulting') || text.includes('strategy consulting')) return 'management consulting';
+    if (text.includes('consulting') || text.includes('advisory')) return 'consulting';
+    if (text.includes('marketing') || text.includes('advertising') || text.includes('branding')) return 'marketing';
+    if (text.includes('technology') || text.includes('tech') || text.includes('software') || text.includes('saas')) return 'technology';
+    if (text.includes('healthcare') || text.includes('medical') || text.includes('health')) return 'healthcare';
+    if (text.includes('finance') || text.includes('financial') || text.includes('accounting')) return 'financial services';
+    if (text.includes('legal') || text.includes('law') || text.includes('attorney')) return 'legal';
+    if (text.includes('real estate') || text.includes('property')) return 'real estate';
+    if (text.includes('education') || text.includes('training') || text.includes('learning')) return 'education';
+    if (text.includes('design') || text.includes('creative') || text.includes('graphic')) return 'design';
 
     return 'business services';
   }
 
   private getIndustrySeeds(industry: string): string[] {
     const seeds: { [key: string]: string[] } = {
-      'portfolio management': [
-        'portfolio management',
-        'investment strategy',
-        'wealth management',
-        'pms services',
-        'portfolio allocation',
-        'investment planning'
-      ],
-      'consulting': [
-        'business consulting',
-        'management consulting',
-        'strategy consulting',
-        'business strategy',
-        'operational efficiency'
-      ],
       'financial services': [
         'financial planning',
         'investment advice',
         'wealth building',
         'financial strategy',
         'risk management'
+      ],
+      'marketing consulting': [
+        'marketing strategy',
+        'brand consulting',
+        'marketing campaigns',
+        'digital strategy',
+        'marketing optimization',
+        'growth marketing'
+      ],
+      'digital marketing': [
+        'digital marketing',
+        'seo services',
+        'social media marketing',
+        'content marketing',
+        'online advertising',
+        'digital strategy'
+      ],
+      'management consulting': [
+        'business consulting',
+        'management consulting',
+        'strategy consulting',
+        'business strategy',
+        'operational efficiency',
+        'organizational change'
+      ],
+      'consulting': [
+        'business consulting',
+        'strategic consulting',
+        'professional consulting',
+        'advisory services',
+        'business optimization'
+      ],
+      'marketing': [
+        'marketing services',
+        'brand development',
+        'marketing campaigns',
+        'customer acquisition',
+        'brand strategy'
+      ],
+      'technology': [
+        'technology solutions',
+        'software development',
+        'tech consulting',
+        'digital transformation',
+        'it services'
+      ],
+      'healthcare': [
+        'healthcare services',
+        'medical solutions',
+        'healthcare consulting',
+        'patient care',
+        'health management'
+      ],
+      'legal': [
+        'legal services',
+        'legal consulting',
+        'law practice',
+        'legal advice',
+        'legal representation'
+      ],
+      'real estate': [
+        'real estate services',
+        'property management',
+        'real estate consulting',
+        'property investment',
+        'real estate strategy'
+      ],
+      'education': [
+        'educational services',
+        'training programs',
+        'learning solutions',
+        'educational consulting',
+        'professional development'
+      ],
+      'design': [
+        'design services',
+        'creative solutions',
+        'graphic design',
+        'design consulting',
+        'brand design'
       ]
     };
 
@@ -431,5 +503,49 @@ export class DataforSEOClient {
       .slice(0, Math.floor(Math.random() * 3) + 4); // 4-6 questions
 
     return relevantQuestions;
+  }
+
+  private extractMeaningfulWords(text: string): string[] {
+    if (!text) return [];
+
+    const words = text.toLowerCase().split(/\s+/);
+    const stopWords = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should'];
+
+    return words
+      .filter(word =>
+        word.length > 2 &&
+        !stopWords.includes(word) &&
+        /^[a-zA-Z]+$/.test(word) // Only alphabetic words
+      )
+      .slice(0, 5); // Limit to 5 meaningful words
+  }
+
+  private extractCoreBusinessTerms(companyData: CompanyData, industry: string): string[] {
+    const terms: string[] = [];
+
+    // Add industry-specific core terms
+    if (industry === 'marketing consulting') {
+      terms.push('marketing strategy', 'brand development', 'campaign optimization');
+    } else if (industry === 'consulting') {
+      terms.push('business strategy', 'operational efficiency', 'organizational development');
+    } else if (industry === 'technology') {
+      terms.push('software development', 'digital transformation', 'technology strategy');
+    }
+
+    // Add company-specific terms from value propositions
+    companyData.businessPositioning.valueProposition.forEach(vp => {
+      if (vp.length > 3) { // Only meaningful terms
+        terms.push(vp.toLowerCase());
+      }
+    });
+
+    // Add pain point related terms
+    companyData.targetAudience.painPoints.forEach(pain => {
+      if (pain.length > 5) { // Only substantial pain points
+        terms.push(pain.toLowerCase());
+      }
+    });
+
+    return [...new Set(terms)].slice(0, 8); // Deduplicate and limit
   }
 }

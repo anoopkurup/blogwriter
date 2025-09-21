@@ -101,6 +101,27 @@ export class FileManager {
     return JSON.parse(content);
   }
 
+  // Comprehensive Content Analysis for AI Writing Instructions
+  async saveComprehensiveContent(companyPath: string, comprehensiveContent: any): Promise<void> {
+    const companyName = path.basename(companyPath);
+    const fileName = `${companyName}-comprehensive-content.json`;
+    const filePath = path.join(companyPath, fileName);
+    await fs.writeFile(filePath, JSON.stringify(comprehensiveContent, null, 2), 'utf8');
+  }
+
+  async loadComprehensiveContent(companyPath: string): Promise<any> {
+    const companyName = path.basename(companyPath);
+    const fileName = `${companyName}-comprehensive-content.json`;
+    const filePath = path.join(companyPath, fileName);
+
+    if (!(await fs.pathExists(filePath))) {
+      throw new Error(`Comprehensive content analysis not found: ${fileName}`);
+    }
+
+    const content = await fs.readFile(filePath, 'utf8');
+    return JSON.parse(content);
+  }
+
   // Script 4: Keywords
   async saveKeywordTopics(companyPath: string, topics: KeywordTopic[]): Promise<void> {
     const companyName = path.basename(companyPath);

@@ -13,29 +13,56 @@ export class InternalLinksScript {
   }
 
   async execute(config: ScriptConfig): Promise<void> {
-    logger.script(3, 'Internal Links Analyzer');
+    logger.script(2, 'Content Analysis & Internal Links'); // Updated to Script 2
 
     try {
-      // Load sitemap from Script 2
-      logger.startSpinner('Loading sitemap...');
+      // Load comprehensive sitemap from Script 1
+      logger.startSpinner('Loading comprehensive sitemap...');
       const urls = await this.fileManager.loadSitemap(config.companyPath);
 
       if (urls.length === 0) {
-        throw new Error('No sitemap found. Please run Script 2 (Sitemap Creator) first.');
+        throw new Error('No sitemap found. Please run Script 1 (Sitemap Creator) first.');
       }
 
-      logger.updateSpinner('Analyzing pages for internal linking opportunities...');
+      logger.updateSpinner('Analyzing pages for content and internal linking opportunities...');
 
       const internalLinks: InternalLink[] = [];
+      const comprehensiveContent: any = {
+        allPageContents: [],
+        contentByCategory: {
+          homepage: [],
+          about: [],
+          services: [],
+          products: [],
+          team: [],
+          resources: [],
+          blog: [],
+          contact: [],
+          other: []
+        },
+        businessInsights: {
+          services: new Set(),
+          industries: new Set(),
+          keyTerms: new Set(),
+          teamInfo: new Set(),
+          testimonials: [],
+          caseStudies: []
+        }
+      };
 
-      // Analyze each URL for linking opportunities
+      // Analyze each URL for content and linking opportunities
       for (let i = 0; i < urls.length; i++) {
         const url = urls[i];
         logger.updateSpinner(`Analyzing page ${i + 1}/${urls.length}: ${this.getShortUrl(url)}`);
 
         try {
+          // Get detailed page analysis
           const pageData = await this.scraper.analyzePage(url);
 
+          // Get comprehensive page content
+          const pageContent = await this.scraper.scrapePageContent(url);
+
+          // Create internal link entry
           const internalLink: InternalLink = {
             url: pageData.url,
             title: pageData.title,
@@ -46,6 +73,19 @@ export class InternalLinksScript {
           };
 
           internalLinks.push(internalLink);
+
+          // Collect comprehensive content for AI analysis
+          const pageContentData = {
+            url,
+            title: pageData.title,
+            type: pageData.pageType,
+            content: pageContent.content,
+            extractedInfo: this.extractBusinessInfo(pageContent.content, pageData.pageType)
+          };
+
+          comprehensiveContent.allPageContents.push(pageContentData);
+          this.categorizeContent(pageContentData, comprehensiveContent.contentByCategory);
+          this.extractBusinessInsights(pageContentData, comprehensiveContent.businessInsights);
 
         } catch (pageError) {
           logger.warn(`Failed to analyze ${url}: ${(pageError as Error).message}`);
@@ -65,12 +105,22 @@ export class InternalLinksScript {
       // Sort by importance
       const sortedLinks = this.sortLinksByImportance(internalLinks);
 
+      // Convert Sets to Arrays for JSON serialization
+      comprehensiveContent.businessInsights.services = Array.from(comprehensiveContent.businessInsights.services);
+      comprehensiveContent.businessInsights.industries = Array.from(comprehensiveContent.businessInsights.industries);
+      comprehensiveContent.businessInsights.keyTerms = Array.from(comprehensiveContent.businessInsights.keyTerms);
+      comprehensiveContent.businessInsights.teamInfo = Array.from(comprehensiveContent.businessInsights.teamInfo);
+
       // Save internal links data
       logger.updateSpinner('Saving internal links analysis...');
       await this.fileManager.saveInternalLinks(config.companyPath, sortedLinks);
 
+      // Save comprehensive content analysis for AI writing instructions
+      logger.updateSpinner('Saving comprehensive content analysis...');
+      await this.fileManager.saveComprehensiveContent(config.companyPath, comprehensiveContent);
+
       logger.stopSpinner();
-      logger.success('Internal links analysis completed!');
+      logger.success('Content analysis and internal links completed!');
 
       // Display summary
       console.log('');
@@ -188,5 +238,166 @@ export class InternalLinksScript {
     } catch {
       return 'Unknown Page';
     }
+  }
+
+  private extractBusinessInfo(content: string[], pageType: string): any {
+    const allText = content.join(' ').toLowerCase();
+
+    const businessInfo: any = {
+      keyTerms: [],
+      services: [],
+      industries: [],
+      teamMembers: [],
+      testimonials: [],
+      caseStudies: []
+    };
+
+    // Extract services based on page type and content
+    if (pageType === 'service' || allText.includes('service') || allText.includes('solution')) {
+      const serviceKeywords = [
+        'consulting', 'advisory', 'strategy', 'planning', 'implementation',
+        'analysis', 'research', 'development', 'management', 'optimization',
+        'digital transformation', 'marketing', 'sales', 'operations'
+      ];
+
+      serviceKeywords.forEach(keyword => {
+        if (allText.includes(keyword)) {
+          businessInfo.services.push(keyword);
+        }
+      });
+    }
+
+    // Extract industry information
+    const industryKeywords = [
+      'healthcare', 'finance', 'technology', 'manufacturing', 'retail',
+      'education', 'non-profit', 'government', 'startup', 'enterprise',
+      'b2b', 'b2c', 'saas', 'fintech', 'healthtech'
+    ];
+
+    industryKeywords.forEach(keyword => {
+      if (allText.includes(keyword)) {
+        businessInfo.industries.push(keyword);
+      }
+    });
+
+    // Extract team information
+    if (pageType === 'team' || allText.includes('team') || allText.includes('leadership')) {
+      content.forEach(item => {
+        if (item.toLowerCase().includes('ceo') ||
+            item.toLowerCase().includes('founder') ||
+            item.toLowerCase().includes('director') ||
+            item.toLowerCase().includes('manager')) {
+          businessInfo.teamMembers.push(item.trim());
+        }
+      });
+    }
+
+    // Extract testimonials and case studies
+    content.forEach(item => {
+      if (item.length > 50 && item.length < 500) {
+        if (item.toLowerCase().includes('testimonial') ||
+            item.toLowerCase().includes('"') ||
+            item.toLowerCase().includes('review')) {
+          businessInfo.testimonials.push(item.trim());
+        }
+
+        if (item.toLowerCase().includes('case study') ||
+            item.toLowerCase().includes('success story') ||
+            item.toLowerCase().includes('client story')) {
+          businessInfo.caseStudies.push(item.trim());
+        }
+      }
+    });
+
+    return businessInfo;
+  }
+
+  private categorizeContent(pageData: any, contentByCategory: any): void {
+    const { type, content } = pageData;
+
+    switch (type) {
+      case 'homepage':
+        contentByCategory.homepage.push(pageData);
+        break;
+      case 'about':
+        contentByCategory.about.push(pageData);
+        break;
+      case 'service':
+        contentByCategory.services.push(pageData);
+        break;
+      case 'product':
+        contentByCategory.products.push(pageData);
+        break;
+      case 'team':
+        contentByCategory.team.push(pageData);
+        break;
+      case 'blog':
+        contentByCategory.blog.push(pageData);
+        break;
+      case 'contact':
+        contentByCategory.contact.push(pageData);
+        break;
+      default:
+        if (pageData.url.toLowerCase().includes('resource') ||
+            pageData.url.toLowerCase().includes('download') ||
+            pageData.url.toLowerCase().includes('guide')) {
+          contentByCategory.resources.push(pageData);
+        } else {
+          contentByCategory.other.push(pageData);
+        }
+    }
+  }
+
+  private extractBusinessInsights(pageData: any, businessInsights: any): void {
+    const extractedInfo = pageData.extractedInfo;
+
+    // Add services
+    extractedInfo.services.forEach((service: string) => {
+      businessInsights.services.add(service);
+    });
+
+    // Add industries
+    extractedInfo.industries.forEach((industry: string) => {
+      businessInsights.industries.add(industry);
+    });
+
+    // Add team info
+    extractedInfo.teamMembers.forEach((member: string) => {
+      businessInsights.teamInfo.add(member);
+    });
+
+    // Add testimonials
+    extractedInfo.testimonials.forEach((testimonial: string) => {
+      if (testimonial.length > 20) {
+        businessInsights.testimonials.push(testimonial);
+      }
+    });
+
+    // Add case studies
+    extractedInfo.caseStudies.forEach((caseStudy: string) => {
+      if (caseStudy.length > 20) {
+        businessInsights.caseStudies.push(caseStudy);
+      }
+    });
+
+    // Extract key terms from content
+    const allText = pageData.content.join(' ').toLowerCase();
+    const keyTermPatterns = [
+      /\b\w+ing\b/g, // -ing words (consulting, marketing, etc.)
+      /\b\w+tion\b/g, // -tion words (solution, implementation, etc.)
+      /\b\w+ment\b/g, // -ment words (management, development, etc.)
+      /\b\w+ence\b/g, // -ence words (experience, excellence, etc.)
+    ];
+
+    keyTermPatterns.forEach(pattern => {
+      const matches = allText.match(pattern);
+      if (matches) {
+        matches.forEach((match: string) => {
+          if (match.length > 4 && match.length < 20) {
+            businessInsights.keyTerms.add(match);
+          }
+        });
+      }
+    });
   }
 }

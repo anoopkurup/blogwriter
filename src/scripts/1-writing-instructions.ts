@@ -39,9 +39,26 @@ export class WritingInstructionsScript {
       logger.updateSpinner('Generating writing instructions from scraped data...');
       const writingInstructions = this.generateWritingInstructions(enhancedData, template);
 
-      // Step 5: Save to company folder
-      logger.updateSpinner('Saving writing instructions...');
-      await this.fileManager.saveWritingInstructions(config.companyPath, writingInstructions);
+      // Step 4.5: Validate writing instructions quality
+      logger.updateSpinner('Validating writing instructions quality...');
+      if (!this.validateWritingInstructions(writingInstructions)) {
+        logger.warn('Initial writing instructions quality below threshold, attempting enhancement...');
+
+        // Try to enhance with additional extraction strategies
+        const enhancedInstructions = await this.enhanceWritingInstructions(writingInstructions, config.websiteUrl!);
+
+        if (this.validateWritingInstructions(enhancedInstructions)) {
+          logger.info('Enhanced writing instructions passed validation');
+          await this.fileManager.saveWritingInstructions(config.companyPath, enhancedInstructions);
+        } else {
+          logger.warn('Writing instructions still below quality threshold, but saving anyway');
+          await this.fileManager.saveWritingInstructions(config.companyPath, writingInstructions);
+        }
+      } else {
+        // Step 5: Save to company folder
+        logger.updateSpinner('Saving writing instructions...');
+        await this.fileManager.saveWritingInstructions(config.companyPath, writingInstructions);
+      }
 
       logger.stopSpinner();
       logger.success('Writing instructions created successfully from website analysis!');
@@ -170,24 +187,57 @@ export class WritingInstructionsScript {
 
   private async extractBetterTagline(websiteUrl: string): Promise<string> {
     try {
-      // Try to find tagline in hero sections, headers, or meta descriptions
-      const heroData = await this.scraper.scrapePageContent(`${websiteUrl}`);
-
-      // Look for tagline patterns in the scraped content
-      const taglineIndicators = [
-        'We help',
-        'Your trusted',
-        'Leading provider',
-        'Specialized in',
-        'Expert in'
+      // Try multiple pages to find better tagline
+      const pagesToTry = [
+        websiteUrl,
+        `${websiteUrl}/about`,
+        `${websiteUrl}/about-us`,
+        `${websiteUrl}/services`
       ];
 
-      for (const indicator of taglineIndicators) {
-        const match = heroData.content.find((content: string) =>
-          content.toLowerCase().includes(indicator.toLowerCase()) && content.length < 200
-        );
-        if (match) {
-          return match.substring(0, 150).trim();
+      for (const pageUrl of pagesToTry) {
+        try {
+          const heroData = await this.scraper.scrapePageContent(pageUrl);
+
+          // Enhanced tagline patterns with better industry detection
+          const taglineIndicators = [
+            // Marketing consulting specific
+            'marketing consulting',
+            'marketing strategy',
+            'digital marketing',
+            'brand development',
+            'growth marketing',
+            // General consulting patterns
+            'We help',
+            'Your trusted',
+            'Leading provider',
+            'Specialized in',
+            'Expert in',
+            'Professional services for',
+            'Delivering',
+            'Providing',
+            // More specific patterns
+            'consulting company',
+            'advisory services',
+            'strategic consulting'
+          ];
+
+          for (const indicator of taglineIndicators) {
+            const match = heroData.content.find((content: string) => {
+              const lowerContent = content.toLowerCase();
+              return lowerContent.includes(indicator.toLowerCase()) &&
+                     content.length > 20 &&
+                     content.length < 200 &&
+                     !lowerContent.includes('cookie') && // Avoid cookie notices
+                     !lowerContent.includes('privacy'); // Avoid privacy notices
+            });
+
+            if (match) {
+              return this.cleanTagline(match);
+            }
+          }
+        } catch {
+          continue; // Try next page
         }
       }
 
@@ -199,27 +249,45 @@ export class WritingInstructionsScript {
 
   private async extractDetailedServices(websiteUrl: string, existingServices: string[]): Promise<string[]> {
     try {
-      // Try to scrape services page for detailed offerings
+      // Try to scrape multiple pages for service offerings
       const servicesUrls = [
         `${websiteUrl}/services`,
         `${websiteUrl}/solutions`,
         `${websiteUrl}/our-services`,
-        `${websiteUrl}/what-we-do`
+        `${websiteUrl}/what-we-do`,
+        `${websiteUrl}/offerings`,
+        websiteUrl // Also check homepage
       ];
+
+      const allServices: string[] = [];
 
       for (const serviceUrl of servicesUrls) {
         try {
           const serviceData = await this.scraper.scrapePageContent(serviceUrl);
           if (serviceData.content.length > 0) {
-            // Extract service names from headings and content
+            // Extract service names from headings and content with better patterns
             const serviceKeywords = this.extractServiceKeywords(serviceData.content);
-            if (serviceKeywords.length > existingServices.length) {
-              return serviceKeywords.slice(0, 6);
-            }
+            allServices.push(...serviceKeywords);
           }
         } catch {
           continue;
         }
+      }
+
+      // Deduplicate and prioritize relevant services
+      const uniqueServices = [...new Set(allServices)];
+      const filteredServices = this.filterAndPrioritizeServices(uniqueServices);
+
+      if (filteredServices.length > 0) {
+        return filteredServices.slice(0, 6);
+      }
+
+      // Enhanced fallback based on URL analysis
+      const urlLower = websiteUrl.toLowerCase();
+      if (urlLower.includes('marketing')) {
+        return ['Marketing Strategy', 'Brand Development', 'Digital Marketing', 'Marketing Consulting'];
+      } else if (urlLower.includes('consulting')) {
+        return ['Business Consulting', 'Strategic Planning', 'Advisory Services', 'Management Consulting'];
       }
 
       return existingServices.length > 0 ? existingServices : ['Professional Services', 'Consulting', 'Advisory'];
@@ -265,34 +333,80 @@ export class WritingInstructionsScript {
 
   private extractServiceKeywords(content: string[]): string[] {
     const services: string[] = [];
+
+    // Enhanced service patterns with industry-specific terms
     const servicePatterns = [
-      /\b([A-Z][a-z]+\s+(Management|Services?|Solutions?|Consulting|Advisory|Planning))\b/g,
+      // Marketing specific services
+      /\b(Marketing\s+(?:Strategy|Consulting|Planning|Optimization|Campaigns?))\b/gi,
+      /\b(Digital\s+Marketing|Social\s+Media\s+Marketing|Content\s+Marketing)\b/gi,
+      /\b(Brand\s+(?:Development|Strategy|Consulting|Management))\b/gi,
+      /\b(SEO|Search\s+Engine\s+Optimization)\b/gi,
+
+      // General business services
+      /\b([A-Z][a-z]+\s+(?:Management|Services?|Solutions?|Consulting|Advisory|Planning))\b/g,
+      /\b(Business\s+(?:Consulting|Strategy|Development|Optimization))\b/gi,
+      /\b(Strategic\s+(?:Planning|Consulting|Advisory))\b/gi,
+
+      // Professional services
+      /\b(Professional\s+Services?)\b/gi,
+      /\b(Consulting\s+Services?)\b/gi,
+      /\b(Advisory\s+Services?)\b/gi,
+
+      // More specific patterns
       /\b([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+Services?)?)\b/g
     ];
 
     for (const text of content) {
+      // Skip very short or very long content
+      if (text.length < 10 || text.length > 200) continue;
+
       for (const pattern of servicePatterns) {
         const matches = text.match(pattern);
         if (matches) {
-          services.push(...matches.slice(0, 3));
+          matches.forEach(match => {
+            const cleanMatch = match.trim();
+            if (cleanMatch.length > 5 && cleanMatch.length < 50) {
+              services.push(cleanMatch);
+            }
+          });
         }
+      }
+
+      // Also look for list items that might be services
+      if (text.includes('•') || text.includes('-') || text.includes('→')) {
+        const listItems = text.split(/[•\-→]/).map(item => item.trim());
+        listItems.forEach(item => {
+          if (item.length > 10 && item.length < 50 &&
+              (item.toLowerCase().includes('consulting') ||
+               item.toLowerCase().includes('strategy') ||
+               item.toLowerCase().includes('marketing') ||
+               item.toLowerCase().includes('management'))) {
+            services.push(item);
+          }
+        });
       }
     }
 
-    return [...new Set(services)].slice(0, 6);
+    return [...new Set(services)].slice(0, 10);
   }
 
   private detectIndustry(companyData: CompanyData): string {
     const text = `${companyData.name} ${companyData.businessPositioning.tagline} ${companyData.businessPositioning.promise} ${companyData.businessPositioning.valueProposition.join(' ')}`.toLowerCase();
 
-    if (text.includes('portfolio') || text.includes('investment') || text.includes('pms') || text.includes('wealth') || text.includes('financial')) return 'financial services';
+    // More specific industry detection matching the dataforSEO improvements
+    if (text.includes('portfolio') || text.includes('investment') || text.includes('pms') || text.includes('wealth management')) return 'financial services';
+    if (text.includes('marketing consulting') || (text.includes('marketing') && text.includes('consulting'))) return 'marketing consulting';
+    if (text.includes('digital marketing') || text.includes('seo') || text.includes('social media marketing')) return 'digital marketing';
+    if (text.includes('management consulting') || text.includes('strategy consulting')) return 'management consulting';
     if (text.includes('consulting') || text.includes('advisory')) return 'consulting';
-    if (text.includes('marketing') || text.includes('digital marketing')) return 'marketing';
-    if (text.includes('technology') || text.includes('tech') || text.includes('software')) return 'technology';
+    if (text.includes('marketing') || text.includes('advertising') || text.includes('branding')) return 'marketing';
+    if (text.includes('technology') || text.includes('tech') || text.includes('software') || text.includes('saas')) return 'technology';
     if (text.includes('healthcare') || text.includes('medical') || text.includes('health')) return 'healthcare';
+    if (text.includes('finance') || text.includes('financial') || text.includes('accounting')) return 'financial services';
     if (text.includes('legal') || text.includes('law') || text.includes('attorney')) return 'legal';
     if (text.includes('real estate') || text.includes('property')) return 'real estate';
-    if (text.includes('education') || text.includes('training')) return 'education';
+    if (text.includes('education') || text.includes('training') || text.includes('learning')) return 'education';
+    if (text.includes('design') || text.includes('creative') || text.includes('graphic')) return 'design';
 
     return 'business services';
   }
@@ -698,5 +812,211 @@ export class WritingInstructionsScript {
       ],
       "sampleTopics": ["<topic 1>", "<topic 2>"]
     };
+  }
+
+  private cleanTagline(tagline: string): string {
+    // Clean up extracted tagline
+    return tagline
+      .replace(/^\s*[•\-→]\s*/, '') // Remove bullet points
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim()
+      .substring(0, 150); // Limit length
+  }
+
+  private filterAndPrioritizeServices(services: string[]): string[] {
+    // Priority scoring for services
+    const priorityTerms = ['marketing', 'consulting', 'strategy', 'development', 'management'];
+    const blacklistTerms = ['cookie', 'privacy', 'terms', 'contact', 'about'];
+
+    return services
+      .filter(service => {
+        const lower = service.toLowerCase();
+        // Filter out blacklisted terms
+        if (blacklistTerms.some(term => lower.includes(term))) return false;
+        // Must have meaningful length
+        if (service.length < 5 || service.length > 50) return false;
+        // Must contain relevant business terms
+        return priorityTerms.some(term => lower.includes(term)) ||
+               lower.includes('services') ||
+               lower.includes('solutions');
+      })
+      .sort((a, b) => {
+        // Sort by priority - services with priority terms come first
+        const aPriority = priorityTerms.some(term => a.toLowerCase().includes(term)) ? 1 : 0;
+        const bPriority = priorityTerms.some(term => b.toLowerCase().includes(term)) ? 1 : 0;
+        return bPriority - aPriority;
+      });
+  }
+
+  private validateWritingInstructions(instructions: any): boolean {
+    // Basic validation to ensure quality
+    const requiredFields = ['company', 'website', 'oneLineDescription'];
+
+    for (const field of requiredFields) {
+      if (!instructions[field] || instructions[field].includes('not found')) {
+        return false;
+      }
+    }
+
+    // Check if we have meaningful brand background
+    if (!instructions.brandBackground.mission ||
+        instructions.brandBackground.mission.includes('not found') ||
+        instructions.brandBackground.productsServices.length === 0) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private async enhanceWritingInstructions(instructions: any, websiteUrl: string): Promise<any> {
+    // Create a copy to modify
+    const enhanced = JSON.parse(JSON.stringify(instructions));
+
+    try {
+      // Try additional extraction methods for missing or poor quality data
+
+      // Enhance mission if it's generic or missing
+      if (!enhanced.brandBackground.mission || enhanced.brandBackground.mission.includes('not found')) {
+        logger.updateSpinner('Extracting better mission statement...');
+
+        // Try multiple extraction approaches
+        const alternativeMissions = await this.extractAlternativeMissions(websiteUrl);
+        if (alternativeMissions.length > 0) {
+          enhanced.brandBackground.mission = alternativeMissions[0];
+        }
+      }
+
+      // Enhance services if too generic
+      if (enhanced.brandBackground.productsServices.length <= 3 ||
+          enhanced.brandBackground.productsServices.some((s: string) => s.includes('Professional Services'))) {
+        logger.updateSpinner('Extracting better service descriptions...');
+
+        const betterServices = await this.extractAlternativeServices(websiteUrl);
+        if (betterServices.length > 0) {
+          enhanced.brandBackground.productsServices = betterServices;
+        }
+      }
+
+      // Enhance tagline if it's generic
+      if (enhanced.brandBackground.uniqueDifferentiators.some((d: string) => d.includes('not found'))) {
+        logger.updateSpinner('Extracting better differentiators...');
+
+        const betterDifferentiators = await this.extractAlternativeDifferentiators(websiteUrl);
+        if (betterDifferentiators.length > 0) {
+          enhanced.brandBackground.uniqueDifferentiators = betterDifferentiators;
+        }
+      }
+
+      return enhanced;
+    } catch (error) {
+      logger.warn(`Enhancement failed: ${(error as Error).message}`);
+      return instructions;
+    }
+  }
+
+  private async extractAlternativeMissions(websiteUrl: string): Promise<string[]> {
+    const missions: string[] = [];
+    const pagesToTry = [`${websiteUrl}/about`, `${websiteUrl}/why-us`, `${websiteUrl}/story`];
+
+    for (const pageUrl of pagesToTry) {
+      try {
+        const data = await this.scraper.scrapePageContent(pageUrl);
+
+        // Look for mission-like statements with broader patterns
+        const missionPatterns = [
+          /we(?:\s+are|\s+specialize\s+in|\s+focus\s+on)[^.]{30,200}\./gi,
+          /our\s+(?:goal|vision|mission|purpose)[^.]{20,200}\./gi,
+          /helping\s+(?:businesses|companies|clients)[^.]{20,200}\./gi,
+          /dedicated\s+to[^.]{20,200}\./gi
+        ];
+
+        for (const content of data.content) {
+          for (const pattern of missionPatterns) {
+            const matches = content.match(pattern);
+            if (matches) {
+              matches.forEach(match => {
+                const cleaned = match.trim();
+                if (cleaned.length > 30 && cleaned.length < 250) {
+                  missions.push(cleaned);
+                }
+              });
+            }
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return missions.slice(0, 3);
+  }
+
+  private async extractAlternativeServices(websiteUrl: string): Promise<string[]> {
+    const services: string[] = [];
+    const pagesToTry = [
+      `${websiteUrl}/services`,
+      `${websiteUrl}/what-we-do`,
+      `${websiteUrl}/solutions`,
+      `${websiteUrl}/expertise`
+    ];
+
+    for (const pageUrl of pagesToTry) {
+      try {
+        const data = await this.scraper.scrapePageContent(pageUrl);
+
+        // Look for service descriptions in headers and structured content
+        for (const content of data.content) {
+          // Look for service-like headings and descriptions
+          if (content.length > 15 && content.length < 80) {
+            const lower = content.toLowerCase();
+            if ((lower.includes('marketing') || lower.includes('consulting') ||
+                 lower.includes('strategy') || lower.includes('development')) &&
+                !lower.includes('cookie') && !lower.includes('privacy')) {
+              services.push(content.trim());
+            }
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return [...new Set(services)].slice(0, 6);
+  }
+
+  private async extractAlternativeDifferentiators(websiteUrl: string): Promise<string[]> {
+    const differentiators: string[] = [];
+    const pagesToTry = [`${websiteUrl}/why-choose-us`, `${websiteUrl}/about`, websiteUrl];
+
+    for (const pageUrl of pagesToTry) {
+      try {
+        const data = await this.scraper.scrapePageContent(pageUrl);
+
+        // Look for differentiator patterns
+        const differentiatorPatterns = [
+          /(?:what makes us|why choose us|our advantage)[^.]{20,150}\./gi,
+          /(?:experienced|proven|trusted|certified)[^.]{20,150}\./gi,
+          /(?:unique|different|specialized)[^.]{20,150}\./gi
+        ];
+
+        for (const content of data.content) {
+          for (const pattern of differentiatorPatterns) {
+            const matches = content.match(pattern);
+            if (matches) {
+              matches.forEach(match => {
+                const cleaned = match.trim();
+                if (cleaned.length > 20 && cleaned.length < 150) {
+                  differentiators.push(cleaned);
+                }
+              });
+            }
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return differentiators.slice(0, 3);
   }
 }

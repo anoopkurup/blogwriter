@@ -8,6 +8,7 @@ import { FileManager } from './shared/fileManager.js';
 
 // Import all scripts
 import { WritingInstructionsScript } from './scripts/1-writing-instructions.js';
+import { EnhancedWritingInstructionsScript } from './scripts/1-enhanced-writing-instructions.js';
 import { SitemapCreatorScript } from './scripts/2-sitemap-creator.js';
 import { InternalLinksScript } from './scripts/3-internal-links.js';
 import { KeywordGenerationScript } from './scripts/4-keyword-generation.js';
@@ -22,10 +23,10 @@ program
   .description('Modular blog writer automation with 6 independent scripts')
   .version('2.0.0');
 
-// Script 1: Writing Instructions Creator
+// Script 1: Sitemap Creator (Reordered - Data First!)
 program
-  .command('instructions')
-  .description('Create writing instructions from company website (Script 1)')
+  .command('sitemap')
+  .description('Create detailed website sitemap (Script 1 - Data Gathering Phase)')
   .argument('<company-name>', 'Company name for the project')
   .argument('<website-url>', 'Company website URL to analyze')
   .action(async (companyName: string, websiteUrl: string) => {
@@ -37,7 +38,7 @@ program
       logger.info(`Website: ${websiteUrl}`);
 
       const companyPath = await setupCompanyFolder(companyName);
-      const script = new WritingInstructionsScript();
+      const script = new SitemapCreatorScript();
 
       await script.execute({
         companyName,
@@ -51,13 +52,12 @@ program
     }
   });
 
-// Script 2: Sitemap Creator
+// Script 2: Internal Links Analyzer (Reordered - Data Collection!)
 program
-  .command('sitemap')
-  .description('Create detailed website sitemap (Script 2)')
+  .command('internal-links')
+  .description('Analyze sitemap URLs and collect detailed content (Script 2 - Content Analysis)')
   .argument('<company-name>', 'Company name')
-  .option('-u, --url <url>', 'Website URL (if not using existing company data)')
-  .action(async (companyName: string, options) => {
+  .action(async (companyName: string) => {
     try {
       await validateEnvironment();
 
@@ -65,12 +65,11 @@ program
       logger.info(`Company: ${companyName}`);
 
       const companyPath = await getCompanyPath(companyName);
-      const script = new SitemapCreatorScript();
+      const script = new InternalLinksScript();
 
       await script.execute({
         companyName,
-        companyPath,
-        websiteUrl: options.url
+        companyPath
       });
 
     } catch (error) {
@@ -79,10 +78,10 @@ program
     }
   });
 
-// Script 3: Internal Links Analyzer
+// Script 3: Writing Instructions Creator (Reordered - AI Analysis!)
 program
-  .command('internal-links')
-  .description('Analyze sitemap URLs for internal linking opportunities (Script 3)')
+  .command('instructions')
+  .description('Create AI-powered writing instructions from comprehensive site data (Script 3)')
   .argument('<company-name>', 'Company name')
   .action(async (companyName: string) => {
     try {
@@ -92,7 +91,16 @@ program
       logger.info(`Company: ${companyName}`);
 
       const companyPath = await getCompanyPath(companyName);
-      const script = new InternalLinksScript();
+
+      // Try enhanced script first, fallback to basic if needed
+      let script;
+      try {
+        script = new EnhancedWritingInstructionsScript();
+        logger.info('Using enhanced AI-powered writing instructions generator');
+      } catch (error) {
+        logger.warn('Enhanced script unavailable, using basic version');
+        script = new WritingInstructionsScript();
+      }
 
       await script.execute({
         companyName,
@@ -225,9 +233,9 @@ program
       const status = await fileManager.getScriptStatus(companyPath);
 
       logger.section(`Project Status: ${companyName}`);
-      logger.info(`✅ Script 1 (Writing Instructions): ${status.script1 ? 'Complete' : 'Pending'}`);
-      logger.info(`✅ Script 2 (Sitemap): ${status.script2 ? 'Complete' : 'Pending'}`);
-      logger.info(`✅ Script 3 (Internal Links): ${status.script3 ? 'Complete' : 'Pending'}`);
+      logger.info(`✅ Script 1 (Sitemap): ${status.script2 ? 'Complete' : 'Pending'}`);
+      logger.info(`✅ Script 2 (Internal Links): ${status.script3 ? 'Complete' : 'Pending'}`);
+      logger.info(`✅ Script 3 (Writing Instructions): ${status.script1 ? 'Complete' : 'Pending'}`);
       logger.info(`✅ Script 4 (Keywords): ${status.script4 ? 'Complete' : 'Pending'}`);
 
       // Check for articles
@@ -237,12 +245,12 @@ program
       // Show next steps
       console.log('');
       logger.subsection('Next Steps:');
-      if (!status.script1) {
-        logger.info('1. Run: blog-writer instructions <company-name> <website-url>');
-      } else if (!status.script2) {
-        logger.info('2. Run: blog-writer sitemap <company-name>');
+      if (!status.script2) {
+        logger.info('1. Run: blog-writer sitemap <company-name> <website-url>');
       } else if (!status.script3) {
-        logger.info('3. Run: blog-writer internal-links <company-name>');
+        logger.info('2. Run: blog-writer internal-links <company-name>');
+      } else if (!status.script1) {
+        logger.info('3. Run: blog-writer instructions <company-name>');
       } else if (!status.script4) {
         logger.info('4. Run: blog-writer keywords <company-name>');
       } else {
@@ -261,37 +269,37 @@ program
 // Workflow command (run multiple scripts in sequence)
 program
   .command('workflow')
-  .description('Run complete workflow (Scripts 1-4) for a company')
+  .description('Run complete workflow (Scripts 1-4) for a company - NEW DATA-FIRST APPROACH')
   .argument('<company-name>', 'Company name')
   .argument('<website-url>', 'Company website URL')
   .action(async (companyName: string, websiteUrl: string) => {
     try {
       await validateEnvironment();
 
-      logger.section(`Blog Writer Automation - Complete Workflow`);
+      logger.section(`Blog Writer Automation - Complete Workflow (Data-First Approach)`);
       logger.info(`Company: ${companyName}`);
       logger.info(`Website: ${websiteUrl}`);
 
       const companyPath = await setupCompanyFolder(companyName);
 
-      // Run Scripts 1-4 in sequence
-      logger.subsection('Running Script 1: Writing Instructions...');
-      const script1 = new WritingInstructionsScript();
+      // Run Scripts 1-4 in NEW SEQUENCE
+      logger.subsection('Running Script 1: Sitemap Creator (Data Gathering)...');
+      const script1 = new SitemapCreatorScript();
       await script1.execute({ companyName, companyPath, websiteUrl });
 
-      logger.subsection('Running Script 2: Sitemap Creator...');
-      const script2 = new SitemapCreatorScript();
-      await script2.execute({ companyName, companyPath, websiteUrl });
+      logger.subsection('Running Script 2: Internal Links (Content Analysis)...');
+      const script2 = new InternalLinksScript();
+      await script2.execute({ companyName, companyPath });
 
-      logger.subsection('Running Script 3: Internal Links...');
-      const script3 = new InternalLinksScript();
+      logger.subsection('Running Script 3: Writing Instructions (AI Analysis)...');
+      const script3 = new EnhancedWritingInstructionsScript();
       await script3.execute({ companyName, companyPath });
 
       logger.subsection('Running Script 4: Keyword Generation...');
       const script4 = new KeywordGenerationScript();
       await script4.execute({ companyName, companyPath });
 
-      logger.success('Complete workflow finished!');
+      logger.success('Complete data-first workflow finished!');
       logger.info('Ready for content generation with: blog-writer write <company-name>');
 
     } catch (error) {
